@@ -26,9 +26,10 @@ coverage
 # Compiled binary addons (http://nodejs.org/api/addons.html)
 build/Release
 
-# Dependency directories
+# Dependency files and directories
 node_modules
 jspm_packages
+yarn.lock
 
 # Optional npm cache directory
 .npm
@@ -41,3 +42,8 @@ jspm_packages
 
 # vim swap files
 *.swp
+
+package-lock.json
+
+static
+

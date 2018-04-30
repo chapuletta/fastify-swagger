@@ -6,8 +6,9 @@ const Fastify = require('fastify')
 const Swagger = require('swagger-parser')
 const yaml = require('js-yaml')
 const fastifySwagger = require('../index')
-const readFileSync = require('fs').readFileSync
+
 const resolve = require('path').resolve
+const readFileSync = require('fs').readFileSync
 
 const swaggerInfo = {
   swagger: {
@@ -17,7 +18,16 @@ const swaggerInfo = {
       version: '0.1.0'
     },
     host: 'localhost',
-    schemes: ['http']
+    schemes: ['http'],
+    consumes: ['application/json'],
+    produces: ['application/json'],
+    securityDefinitions: {
+      apiKey: {
+        type: 'apiKey',
+        name: 'apiKey',
+        in: 'header'
+      }
+    }
   },
   exposeRoute: true
 }
@@ -71,8 +81,31 @@ const opts3 = {
   }
 }
 
+const opts4 = {
+  schema: {
+    security: [
+      {
+        'apiKey': []
+      }
+    ]
+  }
+}
+
+const opts5 = {
+  schema: {
+    params: {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string'
+        }
+      }
+    }
+  }
+}
+
 test('/documentation/json route', t => {
-  t.plan(1)
+  t.plan(2)
   const fastify = Fastify()
 
   fastify.register(fastifySwagger, swaggerInfo)
@@ -82,11 +115,14 @@ test('/documentation/json route', t => {
   fastify.get('/example', opts1, () => {})
   fastify.post('/example', opts2, () => {})
   fastify.get('/parameters/:id', opts3, () => {})
+  fastify.get('/example1', opts4, () => {})
 
   fastify.inject({
     method: 'GET',
     url: '/documentation/json'
-  }, res => {
+  }, (err, res) => {
+    t.error(err)
+
     var payload = JSON.parse(res.payload)
 
     Swagger.validate(payload)
@@ -100,7 +136,7 @@ test('/documentation/json route', t => {
 })
 
 test('fastify.swagger should return a valid swagger yaml', t => {
-  t.plan(3)
+  t.plan(4)
   const fastify = Fastify()
 
   fastify.register(fastifySwagger, swaggerInfo)
@@ -110,11 +146,14 @@ test('fastify.swagger should return a valid swagger yaml', t => {
   fastify.get('/example', opts1, () => {})
   fastify.post('/example', opts2, () => {})
   fastify.get('/parameters/:id', opts3, () => {})
+  fastify.get('/example1', opts4, () => {})
+  fastify.all('/parametersWithoutDesc/:id', opts5, () => {})
 
   fastify.inject({
     method: 'GET',
     url: '/documentation/yaml'
-  }, res => {
+  }, (err, res) => {
+    t.error(err)
     t.is(typeof res.payload, 'string')
     t.is(res.headers['content-type'], 'application/x-yaml')
     try {
@@ -126,8 +165,8 @@ test('fastify.swagger should return a valid swagger yaml', t => {
   })
 })
 
-test('/documenatation should send the swagger UI html', t => {
-  t.plan(3)
+test('/documenatation should redirect to /documentation/', t => {
+  t.plan(4)
   const fastify = Fastify()
 
   fastify.register(fastifySwagger, swaggerInfo)
@@ -137,13 +176,39 @@ test('/documenatation should send the swagger UI html', t => {
   fastify.get('/example', opts1, () => {})
   fastify.post('/example', opts2, () => {})
   fastify.get('/parameters/:id', opts3, () => {})
+  fastify.get('/example1', opts4, () => {})
 
   fastify.inject({
     method: 'GET',
     url: '/documentation'
-  }, res => {
+  }, (err, res) => {
+    t.error(err)
+    t.strictEqual(res.statusCode, 302)
+    t.strictEqual(res.headers['location'], './documentation/')
     t.is(typeof res.payload, 'string')
-    t.is(res.headers['content-type'], 'text/html')
+  })
+})
+
+test('/documenatation/:file should send back the correct file', t => {
+  t.plan(21)
+  const fastify = Fastify()
+
+  fastify.register(fastifySwagger, swaggerInfo)
+
+  fastify.get('/', () => {})
+  fastify.post('/', () => {})
+  fastify.get('/example', opts1, () => {})
+  fastify.post('/example', opts2, () => {})
+  fastify.get('/parameters/:id', opts3, () => {})
+  fastify.get('/example1', opts4, () => {})
+
+  fastify.inject({
+    method: 'GET',
+    url: '/documentation/'
+  }, (err, res) => {
+    t.error(err)
+    t.is(typeof res.payload, 'string')
+    t.is(res.headers['content-type'], 'text/html; charset=UTF-8')
     t.strictEqual(
       readFileSync(
         resolve(__dirname, '..', 'static', 'index.html'),
@@ -151,30 +216,19 @@ test('/documenatation should send the swagger UI html', t => {
       ),
       res.payload
     )
+    t.ok(res.payload.indexOf('resolveUrl') !== -1)
   })
-})
-
-test('/documenatation/:file should send back the correct file', t => {
-  t.plan(12)
-  const fastify = Fastify()
-
-  fastify.register(fastifySwagger, swaggerInfo)
-
-  fastify.get('/', () => {})
-  fastify.post('/', () => {})
-  fastify.get('/example', opts1, () => {})
-  fastify.post('/example', opts2, () => {})
-  fastify.get('/parameters/:id', opts3, () => {})
 
   fastify.inject({
     method: 'GET',
-    url: '/documentation/'
-  }, res => {
+    url: '/documentation/oauth2-redirect.html'
+  }, (err, res) => {
+    t.error(err)
     t.is(typeof res.payload, 'string')
-    t.is(res.headers['content-type'], 'text/html')
+    t.is(res.headers['content-type'], 'text/html; charset=UTF-8')
     t.strictEqual(
       readFileSync(
-        resolve(__dirname, '..', 'static', 'index.html'),
+        resolve(__dirname, '..', 'static', 'oauth2-redirect.html'),
         'utf8'
       ),
       res.payload
@@ -184,9 +238,10 @@ test('/documenatation/:file should send back the correct file', t => {
   fastify.inject({
     method: 'GET',
     url: '/documentation/swagger-ui.css'
-  }, res => {
+  }, (err, res) => {
+    t.error(err)
     t.is(typeof res.payload, 'string')
-    t.is(res.headers['content-type'], 'text/css')
+    t.is(res.headers['content-type'], 'text/css; charset=UTF-8')
     t.strictEqual(
       readFileSync(
         resolve(__dirname, '..', 'static', 'swagger-ui.css'),
@@ -199,9 +254,10 @@ test('/documenatation/:file should send back the correct file', t => {
   fastify.inject({
     method: 'GET',
     url: '/documentation/swagger-ui-bundle.js'
-  }, res => {
+  }, (err, res) => {
+    t.error(err)
     t.is(typeof res.payload, 'string')
-    t.is(res.headers['content-type'], 'application/javascript')
+    t.is(res.headers['content-type'], 'application/javascript; charset=UTF-8')
     t.strictEqual(
       readFileSync(
         resolve(__dirname, '..', 'static', 'swagger-ui-bundle.js'),
@@ -214,9 +270,10 @@ test('/documenatation/:file should send back the correct file', t => {
   fastify.inject({
     method: 'GET',
     url: '/documentation/swagger-ui-standalone-preset.js'
-  }, res => {
+  }, (err, res) => {
+    t.error(err)
     t.is(typeof res.payload, 'string')
-    t.is(res.headers['content-type'], 'application/javascript')
+    t.is(res.headers['content-type'], 'application/javascript; charset=UTF-8')
     t.strictEqual(
       readFileSync(
         resolve(__dirname, '..', 'static', 'swagger-ui-standalone-preset.js'),
@@ -228,7 +285,7 @@ test('/documenatation/:file should send back the correct file', t => {
 })
 
 test('/documenatation/:file 404', t => {
-  t.plan(2)
+  t.plan(3)
   const fastify = Fastify()
 
   fastify.register(fastifySwagger, swaggerInfo)
@@ -238,15 +295,17 @@ test('/documenatation/:file 404', t => {
   fastify.get('/example', opts1, () => {})
   fastify.post('/example', opts2, () => {})
   fastify.get('/parameters/:id', opts3, () => {})
+  fastify.get('/example1', opts4, () => {})
 
   fastify.inject({
     method: 'GET',
     url: '/documentation/stuff.css'
-  }, res => {
+  }, (err, res) => {
+    t.error(err)
     const payload = JSON.parse(res.payload)
     t.strictEqual(res.statusCode, 404)
     t.deepEqual({
-      message: 'Not found',
+      message: 'Not Found',
       error: 'Not Found',
       statusCode: 404
     }, payload)
